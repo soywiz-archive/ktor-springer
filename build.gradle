@@ -1,0 +1,36 @@
+buildscript {
+    ext.kotlin_version = '1.2.30'
+    ext.ktor_version = '0.9.1'
+    repositories {
+        jcenter()
+    }
+    dependencies {
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+apply plugin: 'kotlin'
+
+sourceSets {
+    main.kotlin.srcDirs = [ 'src' ]
+    main.resources.srcDirs = [ 'resources' ]
+    test.kotlin.srcDirs = [ 'test' ]
+    test.resources.srcDirs = [ 'testresources' ]
+}
+
+repositories {
+    jcenter()
+    maven { url "http://kotlin.bintray.com/ktor" }
+}
+
+dependencies {
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    compile "io.ktor:ktor-server-core:$ktor_version"
+    compile "io.ktor:ktor-websockets:$ktor_version"
+    testCompile "io.ktor:ktor-server-netty:$ktor_version"
+    testCompile "io.ktor:ktor-auth:$ktor_version"
+    testCompile "org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version"
+    testCompile "io.ktor:ktor-server-test-host:$ktor_version"
+}
+
+kotlin.experimental.coroutines = 'enable'
