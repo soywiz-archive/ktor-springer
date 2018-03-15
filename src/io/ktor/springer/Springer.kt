@@ -173,13 +173,12 @@ interface Routes
 interface RoutesBackend
 
 // @TODO: Suspend properties!
-suspend fun RoutesBackend.getCall(): ApplicationCall {
-    return coroutineContext[ApplicationCallCoroutineContext.KEY]?.applicationCall
+suspend fun RoutesBackend.call(): ApplicationCall =
+    coroutineContext[ApplicationCallCoroutineContext.KEY]?.applicationCall
             ?: throw IllegalAccessException("ApplicationCall not in coroutine context")
-}
 
-suspend fun RoutesBackend.getRequest() = getCall().request
-suspend fun RoutesBackend.getResponse() = getCall().response
+suspend fun RoutesBackend.request() = call().request
+suspend fun RoutesBackend.response() = call().response
 
 fun <T : Annotation> Method.getAnnotationInAncestors(clazz: Class<T>): T? {
     val res = this.getAnnotation(clazz) ?: this.getDeclaredAnnotation(clazz)

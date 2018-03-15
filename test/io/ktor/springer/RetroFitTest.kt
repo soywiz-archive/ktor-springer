@@ -41,7 +41,7 @@ class RetroFitTest {
     // Code in the Backend
     class MyServiceBackend : MyService, RoutesBackend {
         override suspend fun getIp(): String {
-            return getCall().request.origin.remoteHost
+            return call().request.origin.remoteHost
         }
 
         override suspend fun hello(name: String): String {
