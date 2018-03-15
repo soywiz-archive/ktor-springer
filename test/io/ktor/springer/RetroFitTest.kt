@@ -12,12 +12,18 @@ import java.util.concurrent.*
 import kotlin.test.*
 
 class RetroFitTest {
+    private inline fun <reified T : Routes> testClient(noinline gen: () -> RoutesBackend, noinline test: suspend T.() -> Unit) {
+        tempServer({ gen() }) { endPoint ->
+            val client = createClient<T>(Apache.config { followRedirects = true }, endPoint)
+            test(client)
+        }
+    }
+
     @Test
-    fun name() = tempServer({ MyServiceBackend() }) { endPoint ->
-        val client = createClient<MyService>(Apache.config { followRedirects = true }, endPoint)
-        assertEquals("Hello world", client.hello("world"))
-        assertEquals("127.0.0.1", client.getIp())
-        assertEquals("127.0.0.1", client.getIp())
+    fun name() = testClient<MyService>({ MyServiceBackend() }) {
+        assertEquals("Hello world", hello("world"))
+        assertEquals("127.0.0.1", getIp())
+        assertEquals("127.0.0.1", getIp())
     }
 
     // Code in Common, use createClient to create a client implementing this interface by calling to an HTTP endpoint
