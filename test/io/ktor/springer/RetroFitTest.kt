@@ -15,15 +15,18 @@ class RetroFitTest {
     @Test
     fun name() = tempServer({ MyServiceBackend() }) { endPoint ->
         val client = createClient<MyService>(Apache.config { followRedirects = true }, endPoint)
+        assertEquals("Hello world", client.hello("world"))
         assertEquals("127.0.0.1", client.getIp())
         assertEquals("127.0.0.1", client.getIp())
-        //assertEquals("127.0.0.1", client.redirect())
     }
 
     // Code in Common, use createClient to create a client implementing this interface by calling to an HTTP endpoint
     interface MyService : Routes {
         @Get("/ip")
         suspend fun getIp(): String
+
+        @Get("/hello/{}")
+        suspend fun hello(name: String): String
 
         @Get("/redirect")
         suspend fun redirect(): String
@@ -32,12 +35,11 @@ class RetroFitTest {
     // Code in the Backend
     class MyServiceBackend : MyService, RoutesBackend {
         override suspend fun getIp(): String {
-            return try {
-                // CALL is attached to the coroutineContext, so not required in the parameters!
-                getCall().request.origin.remoteHost
-            } catch (e: Throwable) {
-                e.message ?: "UNKNOWN ERROR"
-            }
+            return getCall().request.origin.remoteHost
+        }
+
+        override suspend fun hello(name: String): String {
+            return "Hello $name"
         }
 
         override suspend fun redirect(): String {

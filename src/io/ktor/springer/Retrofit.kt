@@ -16,17 +16,26 @@ suspend inline fun <reified T : Routes> createClient(fact: HttpClientEngineFacto
 suspend fun <T : Routes> createClient(clazz: Class<T>, fact: HttpClientEngineFactory<*>, rootUrl: String): T {
     val rootUrlTrim = rootUrl.trimEnd('/')
     val client = HttpClient(fact)
+
     return Proxy.newProxyInstance(clazz.classLoader, arrayOf(clazz),
         { proxy, method, args ->
             val path = method.getDeclaredAnnotation(Get::class.java)?.path
                     ?: method.getDeclaredAnnotation(Post::class.java)?.path
                     ?: method.getDeclaredAnnotation(WS::class.java)?.path
                     ?: throw IllegalArgumentException("Can't find path for $method")
-            val cont = args[0] as Continuation<String>
+
+            val cont = args.lastOrNull() as? Continuation<String>?
+                    ?: throw RuntimeException("Just implemented suspend functions")
+
+            val pathTrim = path.trimStart('/')
+            val pathPattern = PathPattern(pathTrim)
+
+            var argindex = 0
+            val pathReplaced = pathPattern.replace { "${args[argindex++]}" }
+
             launch {
                 try {
-                    val pathTrim = path.trimStart('/')
-                    val fullUrl = "$rootUrlTrim/$pathTrim"
+                    val fullUrl = "$rootUrlTrim/$pathReplaced"
                     val res = client.call(fullUrl)
                     if (res.response.status.value < 400) {
                         cont.resume(res.response.readText())

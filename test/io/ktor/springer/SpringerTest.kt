@@ -31,6 +31,7 @@ class SpringerTest {
     @Test
     fun checkRedirect() = withTestApplication({ module() }) {
         handleRequest(HttpMethod.Get, "/redirect").let { call ->
+            call.awaitCompletion()
             assertEquals("/", call.response.headers["Location"])
             assertEquals(HttpStatusCode.PermanentRedirect, call.response.status())
         }
@@ -39,7 +40,7 @@ class SpringerTest {
     @Test
     fun checkAdminInterceptor() = withTestApplication({ module() }) {
         handleRequest(HttpMethod.Get, "/admin").let { call ->
-            //call.awaitCompletion()
+            call.awaitCompletion()
             assertEquals("Basic realm=myrealm", call.response.headers["WWW-Authenticate"])
             assertEquals(null, call.response.content)
         }
@@ -49,7 +50,7 @@ class SpringerTest {
                 "Basic " + Base64.getEncoder().encode("test:test".toByteArray(Charsets.UTF_8)).toString(Charsets.UTF_8)
             )
         }.let { call ->
-            //call.awaitCompletion()
+            call.awaitCompletion()
             assertEquals(null, call.response.headers["WWW-Authenticate"])
             assertEquals("just admins /admin", call.response.content)
         }

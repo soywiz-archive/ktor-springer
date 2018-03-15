@@ -10,6 +10,7 @@ import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.*
 import org.slf4j.*
 import java.lang.reflect.*
+import java.util.*
 import kotlin.coroutines.experimental.*
 import kotlin.reflect.*
 
@@ -38,6 +39,7 @@ fun Routing.registerRoutesInstance(obj: Any) = runBlocking {
                 else -> HttpMethod.Get
             }
             route(path, routeMethod) {
+                val pathParams = PathPattern(path)
                 logger.info("REGISTERED PATH: $path")
                 interceptorAnnotation?.clazz?.java?.newInstance()?.apply {
                     runBlocking {
@@ -48,47 +50,44 @@ fun Routing.registerRoutesInstance(obj: Any) = runBlocking {
                 if (wsAnnotation != null) {
                     application.install(WebSockets)
                     webSocket {
-                        //withContext(coroutineContext + ApplicationCallCoroutineContext(call)) {
-                        //withContext(newCoroutineContext(ApplicationCallCoroutineContext(call))) {
-                        run {
-                            try {
-                                val args = generateParameters(method, call, this)
+                        try {
+                            withContext(newCoroutineContext(ApplicationCallCoroutineContext(call))) {
+                                val args = generateParameters(method, call, this, pathParams)
                                 method.invokeSuspend(instance, args)
-                            } catch (e: Throwable) {
-                                e.printStackTrace()
-                                throw e
                             }
+                        } catch (e: Throwable) {
+                            e.printStackTrace()
+                            throw e
                         }
                     }
                 } else {
                     handle {
-                        //withContext(coroutineContext + ApplicationCallCoroutineContext(call)) {
-                        //withContext(newCoroutineContext(coroutineContext + ApplicationCallCoroutineContext(call))) {
-                        //withContext(newCoroutineContext(ApplicationCallCoroutineContext(call))) {
-                        run {
-                            try {
-                                // @TODO: Use asm to generate classes to call methods directly without reflection
-                                val args = generateParameters(method, call)
-                                val res = method.invokeSuspend(instance, args)
+                        try {
+                            withContext(newCoroutineContext(ApplicationCallCoroutineContext(call))) {
+                                try {
+                                    // @TODO: Use asm to generate classes to call methods directly without reflection
+                                    val args = generateParameters(method, call, null, pathParams)
+                                    val res = method.invokeSuspend(instance, args)
 
-                                if (res != null) {
-                                    when (res) {
-                                        is String -> call.respondText(res)
-                                        else -> call.respond(res)
+                                    if (res != null) {
+                                        when (res) {
+                                            is String -> call.respondText(res)
+                                            else -> call.respond(res)
+                                        }
+                                    } else {
+                                        throw RuntimeException("Returned null!")
                                     }
-                                } else {
-                                    throw RuntimeException("Returned null!")
+                                } catch (e: ResponseException) {
+                                    // @TODO: Mechanism for copying headers?
+                                    for ((name, value) in e.headers.entries()) {
+                                        for (v in value) call.response.headers.append(name, v)
+                                    }
+                                    call.respond(e.code, e.content ?: "")
                                 }
-                            } catch (e: ResponseException) {
-                                // @TODO: Mechanism for copying headers?
-                                for ((name, value) in e.headers.entries()) {
-                                    for (v in value) call.response.headers.append(name, v)
-                                }
-                                call.respond(e.code, e.content ?: "")
-                            } catch (e: Throwable) {
-                                e.printStackTrace()
-                                throw e
                             }
+                        } catch (e: Throwable) {
+                            e.printStackTrace()
+                            throw e
                         }
                     }
                 }
@@ -102,10 +101,22 @@ fun Routing.registerRoutesInstance(obj: Any) = runBlocking {
 private fun generateParameters(
     method: Method,
     call: ApplicationCall,
-    ws: DefaultWebSocketSession? = null
+    ws: DefaultWebSocketSession? = null,
+    pathPattern: PathPattern
 ): List<Any?> {
+    val pathParams = LinkedList(pathPattern.extract(call.request.path()))
+
     val args = arrayListOf<Any?>()
-    for ((index, paramType) in method.parameterTypes.withIndex()) {
+    for ((index, paramInfo) in method.parameters.zip(method.parameterAnnotations).withIndex()) {
+        val (param, paramAnnotations) = paramInfo
+        val paramType = param.type
+
+        fun extractParamString(): String {
+            // paramAnnotations CHECK if there are annotations to determine the source (path, get...)
+            //println(param.name)
+            return pathParams.removeFirst()
+        }
+
         when {
             ApplicationCall::class.java.isAssignableFrom(paramType) -> args += call
             ApplicationRequest::class.java.isAssignableFrom(paramType) -> args += call.request
@@ -115,6 +126,9 @@ private fun generateParameters(
             DefaultWebSocketSession::class.java.isAssignableFrom(paramType) -> args += ws // Ignored, handled by invokeSuspend
             ReceiveChannel::class.java.isAssignableFrom(paramType) -> args += ws!!.incoming
             SendChannel::class.java.isAssignableFrom(paramType) -> args += ws!!.outgoing
+            String::class.java.isAssignableFrom(paramType) -> args += extractParamString()
+            Int::class.java.isAssignableFrom(paramType) -> args += extractParamString().toInt()
+            Long::class.java.isAssignableFrom(paramType) -> args += extractParamString().toLong()
             else -> {
                 throw RuntimeException("Unsupported param: $index: $paramType")
             }
@@ -177,5 +191,7 @@ fun <T : Annotation> Method.getAnnotationInAncestors(clazz: Class<T>): T? {
     }
 
     // Try ancestor
-    return ignoreErrors { this.declaringClass.superclass?.getMethod(name, *parameterTypes) }?.getAnnotationInAncestors(clazz)
+    return ignoreErrors { this.declaringClass.superclass?.getMethod(name, *parameterTypes) }?.getAnnotationInAncestors(
+        clazz
+    )
 }
