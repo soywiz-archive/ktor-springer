@@ -24,3 +24,5 @@ suspend fun Method.invokeSuspend(obj: Any?, args: List<Any?>): Any? = suspendCor
         c.resumeWithException(e)
     }
 }
+
+inline fun <T> ignoreErrors(callback: () ->T): T? = try { callback() } catch (e: Throwable) { null }

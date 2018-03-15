@@ -27,6 +27,9 @@ dependencies {
     compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
     compile "io.ktor:ktor-server-core:$ktor_version"
     compile "io.ktor:ktor-websockets:$ktor_version"
+    compile "io.ktor:ktor-client-core:$ktor_version"
+
+    testCompile "io.ktor:ktor-client-apache:$ktor_version"
     testCompile "io.ktor:ktor-server-netty:$ktor_version"
     testCompile "io.ktor:ktor-auth:$ktor_version"
     testCompile "org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version"

@@ -27,10 +27,10 @@ fun Routing.registerRoutesInstance(obj: Any) = runBlocking {
     }
 
     for (method in clazz.declaredMethods) {
-        val getAnnotation = method.getDeclaredAnnotation(Get::class.java)
-        val postAnnotation = method.getDeclaredAnnotation(Post::class.java)
-        val wsAnnotation = method.getDeclaredAnnotation(WS::class.java)
-        val interceptorAnnotation = method.getDeclaredAnnotation(Interceptor::class.java)
+        val getAnnotation = method.getAnnotationInAncestors(Get::class.java)
+        val postAnnotation = method.getAnnotationInAncestors(Post::class.java)
+        val wsAnnotation = method.getAnnotationInAncestors(WS::class.java)
+        val interceptorAnnotation = method.getAnnotationInAncestors(Interceptor::class.java)
         val path = getAnnotation?.path ?: postAnnotation?.path ?: wsAnnotation?.path
         if (path != null) {
             val routeMethod = when {
@@ -48,37 +48,47 @@ fun Routing.registerRoutesInstance(obj: Any) = runBlocking {
                 if (wsAnnotation != null) {
                     application.install(WebSockets)
                     webSocket {
-                        try {
-                            val args = generateParameters(method, call, this)
-                            val res = method.invokeSuspend(instance, args)
-                        } catch (e: Throwable) {
-                            e.printStackTrace()
-                            throw e
+                        //withContext(coroutineContext + ApplicationCallCoroutineContext(call)) {
+                        //withContext(newCoroutineContext(ApplicationCallCoroutineContext(call))) {
+                        run {
+                            try {
+                                val args = generateParameters(method, call, this)
+                                method.invokeSuspend(instance, args)
+                            } catch (e: Throwable) {
+                                e.printStackTrace()
+                                throw e
+                            }
                         }
                     }
                 } else {
                     handle {
-                        try {
-                            // @TODO: Use asm to generate classes to call methods directly without reflection
-                            val args = generateParameters(method, call)
-                            val res = method.invokeSuspend(instance, args)
-                            if (res != null) {
-                                when (res) {
-                                    is String -> call.respondText(res)
-                                    else -> call.respond(res)
+                        //withContext(coroutineContext + ApplicationCallCoroutineContext(call)) {
+                        //withContext(newCoroutineContext(coroutineContext + ApplicationCallCoroutineContext(call))) {
+                        //withContext(newCoroutineContext(ApplicationCallCoroutineContext(call))) {
+                        run {
+                            try {
+                                // @TODO: Use asm to generate classes to call methods directly without reflection
+                                val args = generateParameters(method, call)
+                                val res = method.invokeSuspend(instance, args)
+
+                                if (res != null) {
+                                    when (res) {
+                                        is String -> call.respondText(res)
+                                        else -> call.respond(res)
+                                    }
+                                } else {
+                                    throw RuntimeException("Returned null!")
                                 }
-                            } else {
-                                throw RuntimeException("Returned null!")
+                            } catch (e: ResponseException) {
+                                // @TODO: Mechanism for copying headers?
+                                for ((name, value) in e.headers.entries()) {
+                                    for (v in value) call.response.headers.append(name, v)
+                                }
+                                call.respond(e.code, e.content ?: "")
+                            } catch (e: Throwable) {
+                                e.printStackTrace()
+                                throw e
                             }
-                        } catch (e: ResponseException) {
-                            // @TODO: Mechanism for copying headers?
-                            for ((name, value) in e.headers.entries()) {
-                                for (v in value) call.response.headers.append(name, v)
-                            }
-                            call.respond(e.code, e.content ?: "")
-                        } catch (e: Throwable) {
-                            e.printStackTrace()
-                            throw e
                         }
                     }
                 }
@@ -101,7 +111,7 @@ private fun generateParameters(
             ApplicationRequest::class.java.isAssignableFrom(paramType) -> args += call.request
             ApplicationResponse::class.java.isAssignableFrom(paramType) -> args += call.response
             Continuation::class.java.isAssignableFrom(paramType) -> Unit // Ignored, handled by invokeSuspend
-            // WebSockets
+        // WebSockets
             DefaultWebSocketSession::class.java.isAssignableFrom(paramType) -> args += ws // Ignored, handled by invokeSuspend
             ReceiveChannel::class.java.isAssignableFrom(paramType) -> args += ws!!.incoming
             SendChannel::class.java.isAssignableFrom(paramType) -> args += ws!!.outgoing
@@ -138,4 +148,34 @@ fun redirect(location: String, permanent: Boolean = false): Nothing {
             "Location", location
         ), if (permanent) HttpStatusCode.PermanentRedirect else HttpStatusCode.Found
     )
+}
+
+class ApplicationCallCoroutineContext(val applicationCall: ApplicationCall) : AbstractCoroutineContextElement(KEY) {
+    object KEY : CoroutineContext.Key<ApplicationCallCoroutineContext>
+}
+
+interface Routes
+
+interface RoutesBackend
+
+// @TODO: Suspend properties!
+suspend fun RoutesBackend.getCall(): ApplicationCall {
+    return coroutineContext[ApplicationCallCoroutineContext.KEY]?.applicationCall
+            ?: throw IllegalAccessException("ApplicationCall not in coroutine context")
+}
+
+suspend fun RoutesBackend.getRequest() = getCall().request
+suspend fun RoutesBackend.getResponse() = getCall().response
+
+fun <T : Annotation> Method.getAnnotationInAncestors(clazz: Class<T>): T? {
+    val res = this.getAnnotation(clazz) ?: this.getDeclaredAnnotation(clazz)
+    if (res != null) return res
+
+    // Try interfaces
+    for (ifc in this.declaringClass.interfaces) {
+        return ignoreErrors { ifc?.getMethod(name, *parameterTypes)?.getAnnotationInAncestors(clazz) } ?: continue
+    }
+
+    // Try ancestor
+    return ignoreErrors { this.declaringClass.superclass?.getMethod(name, *parameterTypes) }?.getAnnotationInAncestors(clazz)
 }
