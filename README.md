@@ -60,7 +60,7 @@ Supports creating asynchronous servers and clients with the same code just like 
 
 ```kotlin
 val client = createClient<MyService>(Apache.config { followRedirects = true }, "http://127.0.0.1:4000")
-val helloWorld = client.getIp()
+val ip = client.getIp()
 val helloWorld = client.hello("world")
 ```
 
